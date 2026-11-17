@@ -1,0 +1,1 @@
+{"name":"smart-chemical","private":true,"type":"module","scripts":{"start":"node server.js"},"dependencies":{"web-push":"3.6.7"},"engines":{"node":">=20"}}

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Smart Chemical</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="theme-color" content="#0b6e4f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Smart Chemical">
+<style>
+body{margin:0;font:17px system-ui,sans-serif;background:#f3f6f4}
+header{background:#0b6e4f;color:#fff;padding:16px;font-size:20px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+header button{width:auto;background:#0004;padding:6px 12px;margin:0;font-size:14px}
+main{padding:12px}
+.card{background:#fff;border-radius:10px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px #0002}
+.card b{font-size:19px}.card small{display:block;color:#555;margin-top:4px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+button,input,textarea{font:inherit;padding:10px;border-radius:8px;border:1px solid #bbb;margin:4px 0;width:100%;box-sizing:border-box}
+button{background:#0b6e4f;color:#fff;border:0}
+button.s{background:#e5e5e5;color:#000}button.d{background:#c0392b}
+.mini{width:auto;padding:6px 12px;margin:0}
+a{color:#0b6e4f}
+#msg{position:fixed;bottom:16px;left:16px;right:16px;background:#222;color:#fff;padding:12px;border-radius:8px;display:none;text-align:center}
+.hint{background:#fff3cd;padding:10px;border-radius:8px;margin-bottom:10px;font-size:15px}
+</style>
+</head>
+<body>
+<header><span>Smart Chemical</span><button id="out" hidden onclick="logout()">Déconnexion</button></header>
+<main id="m"></main>
+<div id="msg"></div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let token, me, vapid, users = [], editing = null;
+try { ({ token, me, vapid } = JSON.parse(localStorage.getItem('sc') || '{}')); } catch (e) {}
+
+function toast(t) { const m = $('msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => m.style.display = 'none', 3500); }
+
+async function api(method, p, body) {
+  const r = await fetch('/api/' + p, { method, headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: body && JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401 && p !== 'login') { logout(); throw new Error(j.error); }
+  if (!r.ok) throw new Error(j.error || 'Erreur');
+  return j;
+}
+
+function logout() { token = me = null; try { localStorage.removeItem('sc'); } catch (e) {} show(); }
+
+function loginView() {
+  $('out').hidden = true;
+  $('m').innerHTML = `<div class="card"><input id="p" placeholder="Pseudo" autocapitalize="none" autocomplete="username">
+    <input id="w" type="password" placeholder="Mot de passe" autocomplete="current-password">
+    <button id="go">Se connecter</button></div>`;
+  $('go').onclick = async () => {
+    try {
+      ({ token, me, vapid } = await api('POST', 'login', { pseudo: $('p').value.trim(), password: $('w').value }));
+      try { localStorage.setItem('sc', JSON.stringify({ token, me, vapid })); } catch (e) {}
+      show();
+    } catch (e) { toast(e.message); }
+  };
+}
+
+async function show() {
+  if (!token) return loginView();
+  $('out').hidden = false;
+  try { users = await api('GET', 'users'); } catch (e) { return toast(e.message); }
+  const ios = /iphone|ipad/i.test(navigator.userAgent) && !navigator.standalone;
+  const notifOk = 'Notification' in window && Notification.permission === 'granted';
+  $('m').innerHTML =
+    (ios ? `<div class="hint">iPhone : pour recevoir les appels, touche Partager puis « Sur l'écran d'accueil », et ouvre l'application depuis l'icône.</div>` : '') +
+    (!notifOk && !ios ? `<button id="notif">🔔 Activer les appels sur ce téléphone</button>` : '') +
+    (ios && 'Notification' in window && !notifOk ? `<button id="notif">🔔 Activer les appels sur ce téléphone</button>` : '') +
+    `<p>Connecté : <b>${esc(me.pseudo)}</b>. Touche un nom pour l'appeler.</p>` +
+    users.map((u, i) => `<div class="card"><div class="row"><div data-call="${i}" style="flex:1"><b>${esc(u.pseudo)}</b>
+      <small>${esc(u.details)}</small></div>
+      ${u.phone ? `<a href="tel:${esc(u.phone)}">📞 ${esc(u.phone)}</a>` : ''}
+      ${me.admin && !u.admin ? `<button class="mini s" data-edit="${i}">✎</button>` : ''}</div></div>`).join('') +
+    (me.admin ? adminForm() : '');
+  if ($('notif')) $('notif').onclick = enablePush;
+  if (notifOk) enablePush(true);
+  document.querySelectorAll('[data-call]').forEach(e => e.onclick = () => call(users[e.dataset.call].pseudo));
+  document.querySelectorAll('[data-edit]').forEach(e => e.onclick = () => { editing = users[e.dataset.edit]; show(); });
+  if (me.admin) bindAdmin();
+}
+
+function adminForm() {
+  const e = editing;
+  return `<div class="card"><b>${e ? 'Modifier ' + esc(e.pseudo) : 'Ajouter une personne'}</b>
+    ${e ? '' : '<input id="a1" placeholder="Pseudo" autocapitalize="none">'}
+    <input id="a2" type="text" placeholder="${e ? 'Nouveau mot de passe (vide = inchangé)' : 'Mot de passe'}" autocomplete="off">
+    <input id="a3" type="tel" placeholder="Téléphone" value="${esc(e?.phone)}">
+    <textarea id="a4" placeholder="Coordonnées / détails" rows="3">${esc(e?.details)}</textarea>
+    <button id="save">Enregistrer</button>
+    ${e ? '<button class="d" id="del">Supprimer</button><button class="s" id="cancel">Annuler</button>' : ''}</div>`;
+}
+
+function bindAdmin() {
+  $('save').onclick = async () => {
+    const b = { pseudo: editing ? editing.pseudo : $('a1').value.trim(), password: $('a2').value, phone: $('a3').value.trim(), details: $('a4').value.trim() };
+    try { await api(editing ? 'PUT' : 'POST', 'users', b); editing = null; toast('Enregistré'); show(); } catch (e) { toast(e.message); }
+  };
+  if ($('del')) $('del').onclick = async () => {
+    if (!confirm('Supprimer ' + editing.pseudo + ' ?')) return;
+    try { await api('DELETE', 'users', { pseudo: editing.pseudo }); editing = null; show(); } catch (e) { toast(e.message); }
+  };
+  if ($('cancel')) $('cancel').onclick = () => { editing = null; show(); };
+}
+
+async function call(pseudo) {
+  try { await api('POST', 'call', { pseudo }); toast('📣 ' + pseudo + ' a été appelé'); } catch (e) { toast(e.message); }
+}
+
+const u8 = b => Uint8Array.from(atob(b.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+async function enablePush(quiet) {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return quiet === true || toast('Notifications non supportées ici (iPhone : ouvre depuis l\'écran d\'accueil)');
+    if (await Notification.requestPermission() !== 'granted') return quiet === true || toast('Notifications refusées');
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(vapid) });
+    await api('POST', 'subscribe', sub.toJSON());
+    if (quiet !== true) { toast('Appels activés ✔'); show(); }
+  } catch (e) { quiet === true || toast('Activation impossible : ' + e.message); }
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+show();
+</script>
+</body>
+</html>
