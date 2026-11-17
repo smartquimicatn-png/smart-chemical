@@ -54,7 +54,7 @@ const routes = {
   'POST /api/call': async (b, me) => {
     const t = db.users.find(u => u.pseudo === b.pseudo);
     if (!t) throw err(404, 'Utilisateur introuvable');
-    const body = JSON.stringify({ title: 'Smart Chemical', body: `${me.pseudo} t'appelle : viens !` });
+    const body = JSON.stringify({ title: `📞 ${me.pseudo} t'appelle !`, body: `${me.pseudo} te demande de venir.` });
     const ring = async () => {
       let n = 0;
       for (const s of [...t.subs]) {
