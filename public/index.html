@@ -34,7 +34,7 @@ a{color:#0b6e4f}
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let token, me, vapid, users = [], editing = null;
+let token, me, vapid, users = [], editing = null, calling = null;
 try { ({ token, me, vapid } = JSON.parse(localStorage.getItem('sc') || '{}')); } catch (e) {}
 
 function toast(t) { const m = $('msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => m.style.display = 'none', 3500); }
@@ -74,6 +74,7 @@ async function show() {
     (ios ? `<div class="hint">iPhone : pour recevoir les appels, touche Partager puis « Sur l'écran d'accueil », et ouvre l'application depuis l'icône.</div>` : '') +
     (!notifOk && !ios ? `<button id="notif">🔔 Activer les appels sur ce téléphone</button>` : '') +
     (ios && 'Notification' in window && !notifOk ? `<button id="notif">🔔 Activer les appels sur ce téléphone</button>` : '') +
+    (calling ? `<div class="hint">📣 Appel en cours vers <b>${esc(calling)}</b> <button class="d" id="stop">⏹ Arrêter l'appel</button></div>` : '') +
     `<p>Connecté : <b>${esc(me.pseudo)}</b>. Touche un nom pour l'appeler.</p>` +
     users.map((u, i) => `<div class="card"><div class="row"><div data-call="${i}" style="flex:1"><b>${esc(u.pseudo)}</b>
       <small>${esc(u.details)}</small></div>
@@ -81,6 +82,7 @@ async function show() {
       ${me.admin && !u.admin ? `<button class="mini s" data-edit="${i}">✎</button>` : ''}</div></div>`).join('') +
     (me.admin ? adminForm() : '');
   if ($('notif')) $('notif').onclick = enablePush;
+  if ($('stop')) $('stop').onclick = stop;
   if (notifOk) enablePush(true);
   document.querySelectorAll('[data-call]').forEach(e => e.onclick = () => call(users[e.dataset.call].pseudo));
   document.querySelectorAll('[data-edit]').forEach(e => e.onclick = () => { editing = users[e.dataset.edit]; show(); });
@@ -111,7 +113,16 @@ function bindAdmin() {
 }
 
 async function call(pseudo) {
-  try { await api('POST', 'call', { pseudo }); toast('📣 ' + pseudo + ' a été appelé'); } catch (e) { toast(e.message); }
+  try {
+    await api('POST', 'call', { pseudo });
+    calling = pseudo; show();
+    clearTimeout(call.t); call.t = setTimeout(() => { calling = null; show(); }, 60000);
+  } catch (e) { toast(e.message); }
+}
+
+async function stop() {
+  const p = calling; calling = null; show();
+  try { await api('POST', 'cancel', { pseudo: p }); toast('Appel arrêté'); } catch (e) { toast(e.message); }
 }
 
 const u8 = b => Uint8Array.from(atob(b.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));

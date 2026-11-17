@@ -32,7 +32,8 @@ public class CallService extends Service {
                 if (c.getResponseCode() == 401) return;
                 BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream()));
                 for (String l; (l = r.readLine()) != null; )
-                    if (l.startsWith("data:")) ring(l.replaceAll(".*\"from\":\"([^\"]*)\".*", "$1"));
+                    if (l.startsWith("data:") && l.contains("cancel")) AlarmActivity.stopRinging();
+                    else if (l.startsWith("data:")) ring(l.replaceAll(".*\"from\":\"([^\"]*)\".*", "$1"));
             } catch (Exception e) { /* coupure réseau : on se reconnecte */ }
             try { Thread.sleep(3000); } catch (InterruptedException e) { return; }
         }

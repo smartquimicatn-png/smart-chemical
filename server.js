@@ -35,6 +35,7 @@ const pub = u => ({ pseudo: u.pseudo, phone: u.phone, details: u.details, admin:
 const err = (code, msg) => Object.assign(new Error(msg), { code });
 
 const live = new Map(); // pseudo -> Set de réponses SSE (application Android ouverte)
+const calls = new Map(); // "de>à" -> minuteurs des rappels en cours
 const fails = new Map(); // ip -> [count, resetAt]; shortcut: in memory, reset on restart
 const routes = {
   'POST /api/login': async (b) => {
@@ -67,10 +68,22 @@ const routes = {
     let sent = await ring();
     for (const r of live.get(t.pseudo) || []) { r.write(`data: ${JSON.stringify({ from: me.pseudo })}\n\n`); sent++; }
     // sonne 6 fois en tout (toutes les 5 s) pour qu'on ne rate pas l'appel
-    if (sent) for (let i = 1; i < 6; i++) setTimeout(() => ring().catch(() => {}), i * 5000);
+    const key = `${me.pseudo}>${t.pseudo}`;
+    (calls.get(key) || []).forEach(clearTimeout);
+    if (sent) calls.set(key, Array.from({ length: 5 }, (_, i) => setTimeout(() => ring().catch(() => {}), (i + 1) * 5000)));
     save();
     if (!sent) throw err(409, `${t.pseudo} n'a pas activé les notifications sur son téléphone`);
     return { sent };
+  },
+  // l'appelant arrête l'appel : plus de rappels, et la sonnerie s'arrête chez l'appelé
+  'POST /api/cancel': async (b, me) => {
+    const t = db.users.find(u => u.pseudo === b.pseudo);
+    if (!t) throw err(404, 'Utilisateur introuvable');
+    (calls.get(`${me.pseudo}>${t.pseudo}`) || []).forEach(clearTimeout);
+    calls.delete(`${me.pseudo}>${t.pseudo}`);
+    for (const r of live.get(t.pseudo) || []) r.write(`data: ${JSON.stringify({ cancel: true })}\n\n`);
+    for (const s of [...t.subs]) await webpush.sendNotification(s, JSON.stringify({ cancel: true, from: me.pseudo }), { TTL: 60, urgency: 'high' }).catch(() => {});
+    return { ok: true };
   },
   'POST /api/users': (b, me) => {
     admin(me);

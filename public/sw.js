@@ -8,6 +8,11 @@ self.addEventListener('fetch', e => {
 });
 self.addEventListener('push', e => {
   const d = e.data ? e.data.json() : { title: 'Smart Chemical', body: 'Tu es appelé !' };
+  if (d.cancel) { // appel arrêté : remplace la notification par un message bref, puis la ferme
+    e.waitUntil(self.registration.showNotification('Appel arrêté', { body: d.from + ' a arrêté l\'appel.', tag: 'appel', icon: 'icon-180.png' })
+      .then(() => new Promise(r => setTimeout(r, 2500))).then(() => self.registration.getNotifications({ tag: 'appel' })).then(l => l.forEach(n => n.close())));
+    return;
+  }
   e.waitUntil(clients.matchAll({ type: 'window' }).then(l => l.forEach(c => c.postMessage('ring'))));
   e.waitUntil(self.registration.showNotification(d.title, {
     body: d.body, icon: 'icon-180.png', vibrate: Array(10).fill([1000, 300]).flat(), requireInteraction: true, tag: 'appel', renotify: true,

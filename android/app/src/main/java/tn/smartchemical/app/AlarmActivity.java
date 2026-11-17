@@ -11,11 +11,14 @@ import android.view.WindowManager;
 import android.widget.*;
 
 public class AlarmActivity extends Activity {
+    static AlarmActivity current;
+    static void stopRinging() { new Handler(Looper.getMainLooper()).post(() -> { if (current != null) current.finish(); }); }
     Ringtone ring;
     Vibrator vib;
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
+        current = this;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD);
         LinearLayout l = new LinearLayout(this);
         l.setOrientation(LinearLayout.VERTICAL); l.setGravity(Gravity.CENTER); l.setBackgroundColor(Color.parseColor("#0b6e4f"));
@@ -39,6 +42,7 @@ public class AlarmActivity extends Activity {
 
     @Override protected void onDestroy() {
         super.onDestroy();
+        if (current == this) current = null;
         if (ring != null) ring.stop();
         if (vib != null) vib.cancel();
         getSystemService(android.app.NotificationManager.class).cancel(2);
