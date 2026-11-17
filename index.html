@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Smart Chemical</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="theme-color" content="#0b6e4f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Smart Chemical">
+<style>
+body{margin:0;font:17px system-ui,sans-serif;background:#f3f6f4}
+header{background:#0b6e4f;color:#fff;padding:16px;font-size:20px;font-weight:600}
+main{padding:12px}
+.card{background:#fff;border-radius:10px;padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 3px #0002}
+button,input{font:inherit;padding:10px;border-radius:8px;border:1px solid #bbb;margin:4px 0;width:100%;box-sizing:border-box}
+button{background:#0b6e4f;color:#fff;border:0}
+button.s{background:#e5e5e5;color:#000}
+a.call{display:block;text-align:center;background:#0b6e4f;color:#fff;padding:12px;border-radius:8px;text-decoration:none;margin:8px 0}
+.mini{width:auto;padding:6px 12px}
+</style>
+</head>
+<body>
+<header id="t">Smart Chemical</header>
+<main id="m"></main>
+<script>
+const K='sc_people';
+let people;
+try{people=JSON.parse(localStorage.getItem(K))}catch(e){}
+if(!Array.isArray(people))people=[{n:'Hamza',p:''},{n:'Faten',p:''},{n:'Nour',p:''}];
+const save=()=>{try{localStorage.setItem(K,JSON.stringify(people))}catch(e){}};
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function list(){
+  $('t').textContent='Smart Chemical';
+  $('m').innerHTML=people.map((x,i)=>`<div class="card" onclick="open_(${i})"><b>${esc(x.n)}</b><span>›</span></div>`).join('')
+   +'<button onclick="open_(-1)">+ Ajouter une personne</button>';
+}
+function open_(i){
+  const x=i<0?{n:'',p:''}:people[i];
+  $('t').textContent=x.n||'Nouveau';
+  $('m').innerHTML=`<input id="n" placeholder="Nom" value="${esc(x.n)}">
+   <input id="p" type="tel" placeholder="Téléphone" value="${esc(x.p)}">
+   ${x.p?`<a class="call" href="tel:${esc(x.p)}">📞 Appeler ${esc(x.n)}</a>`:''}
+   <button onclick="ok(${i})">Enregistrer</button>
+   ${i>=0?`<button class="s" onclick="del(${i})">Supprimer</button>`:''}
+   <button class="s" onclick="list()">‹ Retour</button>`;
+}
+function ok(i){
+  const n=$('n').value.trim();
+  if(!n)return $('n').focus();
+  const x={n,p:$('p').value.trim()};
+  i<0?people.push(x):people[i]=x;
+  save();list();
+}
+function del(i){if(confirm('Supprimer ?')){people.splice(i,1);save();list()}}
+list();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
