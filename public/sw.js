@@ -13,12 +13,17 @@ self.addEventListener('push', e => {
       .then(() => new Promise(r => setTimeout(r, 2500))).then(() => self.registration.getNotifications({ tag: 'appel' })).then(l => l.forEach(n => n.close())));
     return;
   }
-  e.waitUntil(clients.matchAll({ type: 'window' }).then(l => l.forEach(c => c.postMessage('ring'))));
+  e.waitUntil(clients.matchAll({ type: 'window' }).then(l => l.forEach(c => c.postMessage({ from: d.from }))));
   e.waitUntil(self.registration.showNotification(d.title, {
-    body: d.body, icon: 'icon-180.png', vibrate: Array(10).fill([1000, 300]).flat(), requireInteraction: true, tag: 'appel', renotify: true,
+    body: d.body, icon: 'icon-180.png', vibrate: Array(10).fill([1000, 300]).flat(), requireInteraction: true, tag: 'appel', renotify: true, data: { from: d.from }, actions: [{ action: 'stop', title: '⏹ Arrêter' }],
   }));
 });
 self.addEventListener('notificationclick', e => {
   e.notification.close();
+  if (e.action === 'stop') { // bouton Arrêter : coupe les rappels côté serveur
+    return e.waitUntil(caches.open('sc-auth').then(c => c.match('/token')).then(r => r && r.text()).then(t => t && fetch('/api/ack', {
+      method: 'POST', headers: { authorization: 'Bearer ' + t, 'content-type': 'application/json' }, body: JSON.stringify({ pseudo: e.notification.data && e.notification.data.from }),
+    })));
+  }
   e.waitUntil(clients.matchAll({ type: 'window' }).then(l => l.length ? l[0].focus() : clients.openWindow('./')));
 });

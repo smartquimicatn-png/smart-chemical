@@ -34,7 +34,7 @@ a{color:#0b6e4f}
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let token, me, vapid, users = [], editing = null, calling = null;
+let token, me, vapid, users = [], editing = null, calling = null, incoming = null;
 try { ({ token, me, vapid } = JSON.parse(localStorage.getItem('sc') || '{}')); } catch (e) {}
 
 function toast(t) { const m = $('msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => m.style.display = 'none', 3500); }
@@ -74,6 +74,7 @@ async function show() {
     (ios ? `<div class="hint">iPhone : pour recevoir les appels, touche Partager puis « Sur l'écran d'accueil », et ouvre l'application depuis l'icône.</div>` : '') +
     (!notifOk && !ios ? `<button id="notif">🔔 Activer les appels sur ce téléphone</button>` : '') +
     (ios && 'Notification' in window && !notifOk ? `<button id="notif">🔔 Activer les appels sur ce téléphone</button>` : '') +
+    (incoming ? `<div class="hint">📞 <b>${esc(incoming)}</b> t'appelle ! <button class="d" id="ack">⏹ Arrêter la sonnerie</button></div>` : '') +
     (calling ? `<div class="hint">📣 Appel en cours vers <b>${esc(calling)}</b> <button class="d" id="stop">⏹ Arrêter l'appel</button></div>` : '') +
     `<p>Connecté : <b>${esc(me.pseudo)}</b>. Touche un nom pour l'appeler.</p>` +
     users.map((u, i) => `<div class="card"><div class="row"><div data-call="${i}" style="flex:1"><b>${esc(u.pseudo)}</b>
@@ -83,6 +84,8 @@ async function show() {
     (me.admin ? adminForm() : '');
   if ($('notif')) $('notif').onclick = enablePush;
   if ($('stop')) $('stop').onclick = stop;
+  if ($('ack')) $('ack').onclick = ack;
+  try { caches.open('sc-auth').then(c => c.put('/token', new Response(token))); } catch (e) {}
   if (notifOk) enablePush(true);
   document.querySelectorAll('[data-call]').forEach(e => e.onclick = () => call(users[e.dataset.call].pseudo));
   document.querySelectorAll('[data-edit]').forEach(e => e.onclick = () => { editing = users[e.dataset.edit]; show(); });
@@ -120,6 +123,13 @@ async function call(pseudo) {
   } catch (e) { toast(e.message); }
 }
 
+async function ack() {
+  const p = incoming; incoming = null; show();
+  navigator.vibrate?.(0); window.ctx?.close();
+  navigator.serviceWorker.getRegistration().then(r => r && r.getNotifications().then(l => l.forEach(n => n.close())));
+  try { await api('POST', 'ack', { pseudo: p }); } catch (e) { toast(e.message); }
+}
+
 async function stop() {
   const p = calling; calling = null; show();
   try { await api('POST', 'cancel', { pseudo: p }); toast('Appel arrêté'); } catch (e) { toast(e.message); }
@@ -138,10 +148,11 @@ async function enablePush(quiet) {
 }
 
 // application ouverte : bips + vibrations en boucle
-navigator.serviceWorker?.addEventListener('message', () => {
+navigator.serviceWorker?.addEventListener('message', ev => {
+  incoming = ev.data && ev.data.from; show();
   try {
     navigator.vibrate?.(Array(10).fill([1000, 300]).flat());
-    const a = new AudioContext();
+    const a = window.ctx = new AudioContext();
     for (let i = 0; i < 8; i++) { const o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(a.currentTime + i * .6); o.stop(a.currentTime + i * .6 + .35); }
   } catch (e) {}
 });

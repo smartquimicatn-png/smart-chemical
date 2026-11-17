@@ -25,8 +25,21 @@ public class AlarmActivity extends Activity {
         TextView t = new TextView(this);
         t.setText("📞\n" + getIntent().getStringExtra("from") + "\nt'appelle !");
         t.setTextSize(34); t.setTextColor(Color.WHITE); t.setGravity(Gravity.CENTER);
-        Button ok = new Button(this); ok.setText("OK, j'arrive"); ok.setTextSize(22);
-        ok.setOnClickListener(v -> finish());
+        Button ok = new Button(this); ok.setText("⏹ Arrêter"); ok.setTextSize(22);
+        ok.setOnClickListener(v -> {
+            String tok = getSharedPreferences("sc", MODE_PRIVATE).getString("token", "");
+            String from = getIntent().getStringExtra("from");
+            new Thread(() -> { // dit au serveur d'arrêter les rappels
+                try {
+                    java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(MainActivity.URL + "/api/ack").openConnection();
+                    c.setRequestMethod("POST"); c.setDoOutput(true);
+                    c.setRequestProperty("Authorization", "Bearer " + tok); c.setRequestProperty("Content-Type", "application/json");
+                    c.getOutputStream().write(("{\"pseudo\":\"" + from + "\"}").getBytes());
+                    c.getResponseCode();
+                } catch (Exception e) { /* hors ligne : la sonnerie locale est déjà coupée */ }
+            }).start();
+            finish();
+        });
         l.addView(t); l.addView(ok);
         setContentView(l);
 

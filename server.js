@@ -56,7 +56,7 @@ const routes = {
   'POST /api/call': async (b, me) => {
     const t = db.users.find(u => u.pseudo === b.pseudo);
     if (!t) throw err(404, 'Utilisateur introuvable');
-    const body = JSON.stringify({ title: `📞 ${me.pseudo} t'appelle !`, body: `${me.pseudo} te demande de venir.` });
+    const body = JSON.stringify({ title: `📞 ${me.pseudo} t'appelle !`, body: `${me.pseudo} te demande de venir.`, from: me.pseudo });
     const ring = async () => {
       let n = 0;
       for (const s of [...t.subs]) {
@@ -74,6 +74,13 @@ const routes = {
     save();
     if (!sent) throw err(409, `${t.pseudo} n'a pas activé les notifications sur son téléphone`);
     return { sent };
+  },
+  // l'appelé arrête la sonnerie : plus de rappels (et ses autres appareils se taisent)
+  'POST /api/ack': (b, me) => {
+    (calls.get(`${b.pseudo}>${me.pseudo}`) || []).forEach(clearTimeout);
+    calls.delete(`${b.pseudo}>${me.pseudo}`);
+    for (const r of live.get(me.pseudo) || []) r.write(`data: ${JSON.stringify({ cancel: true })}\n\n`);
+    return { ok: true };
   },
   // l'appelant arrête l'appel : plus de rappels, et la sonnerie s'arrête chez l'appelé
   'POST /api/cancel': async (b, me) => {
