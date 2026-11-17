@@ -34,7 +34,7 @@ const PSEUDO = /^[\p{L}\p{N} ._-]{1,30}$/u;
 const pub = u => ({ pseudo: u.pseudo, phone: u.phone, details: u.details, admin: !!u.admin });
 const err = (code, msg) => Object.assign(new Error(msg), { code });
 
-// shortcut: no login rate limit, add one before exposing to many users
+const fails = new Map(); // ip -> [count, resetAt]; shortcut: in memory, reset on restart
 const routes = {
   'POST /api/login': async (b) => {
     const u = db.users.find(x => x.pseudo === b.pseudo);
@@ -111,11 +111,22 @@ http.createServer(async (req, res) => {
       for await (const c of req) { raw += c; if (raw.length > 1e5) throw err(413, 'Trop gros'); }
       const b = raw ? JSON.parse(raw) : {};
       let me;
-      if (url.pathname !== '/api/login') {
+      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+      if (url.pathname === '/api/login') {
+        const f = fails.get(ip);
+        if (f && f[1] > Date.now() && f[0] >= 10) throw err(429, 'Trop d\'essais, réessaie dans quelques minutes');
+      } else {
         me = db.users.find(u => u.pseudo === db.sessions[(req.headers.authorization || '').slice(7)]);
         if (!me) throw err(401, 'Session expirée');
       }
-      send(200, await r(b, me));
+      try { send(200, await r(b, me)); }
+      catch (e) {
+        if (url.pathname === '/api/login' && e.code === 401) {
+          const f = fails.get(ip);
+          fails.set(ip, f && f[1] > Date.now() ? [f[0] + 1, f[1]] : [1, Date.now() + 15 * 60e3]);
+        }
+        throw e;
+      }
     } catch (e) {
       send(e.code || 400, { error: e.code ? e.message : 'Requête invalide' });
     }
