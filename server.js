@@ -34,6 +34,7 @@ const PSEUDO = /^[\p{L}\p{N} ._-]{1,30}$/u;
 const pub = u => ({ pseudo: u.pseudo, phone: u.phone, details: u.details, admin: !!u.admin });
 const err = (code, msg) => Object.assign(new Error(msg), { code });
 
+const live = new Map(); // pseudo -> Set de réponses SSE (application Android ouverte)
 const fails = new Map(); // ip -> [count, resetAt]; shortcut: in memory, reset on restart
 const routes = {
   'POST /api/login': async (b) => {
@@ -63,7 +64,8 @@ const routes = {
       }
       return n;
     };
-    const sent = await ring();
+    let sent = await ring();
+    for (const r of live.get(t.pseudo) || []) { r.write(`data: ${JSON.stringify({ from: me.pseudo })}\n\n`); sent++; }
     // sonne 6 fois en tout (toutes les 5 s) pour qu'on ne rate pas l'appel
     if (sent) for (let i = 1; i < 6; i++) setTimeout(() => ring().catch(() => {}), i * 5000);
     save();
@@ -112,7 +114,18 @@ http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/')) {
     try {
       const r = routes[`${req.method} ${url.pathname}`];
-      if (!r) throw err(404, 'Introuvable');
+      if (!r && url.pathname !== '/api/events') throw err(404, 'Introuvable');
+      if (url.pathname === '/api/events') {
+        const m = db.users.find(u => u.pseudo === db.sessions[(req.headers.authorization || '').slice(7)]);
+        if (!m) throw err(401, 'Session expirée');
+        res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+        res.write(': ok\n\n');
+        const set = live.get(m.pseudo) || live.set(m.pseudo, new Set()).get(m.pseudo);
+        set.add(res);
+        const hb = setInterval(() => res.write(': hb\n\n'), 25000);
+        req.on('close', () => { clearInterval(hb); set.delete(res); });
+        return;
+      }
       let raw = '';
       for await (const c of req) { raw += c; if (raw.length > 1e5) throw err(413, 'Trop gros'); }
       const b = raw ? JSON.parse(raw) : {};

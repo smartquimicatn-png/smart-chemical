@@ -47,7 +47,7 @@ async function api(method, p, body) {
   return j;
 }
 
-function logout() { token = me = null; try { localStorage.removeItem('sc'); } catch (e) {} show(); }
+function logout() { window.SCAndroid?.clear(); token = me = null; try { localStorage.removeItem('sc'); } catch (e) {} show(); }
 
 function loginView() {
   $('out').hidden = true;
@@ -66,6 +66,7 @@ function loginView() {
 async function show() {
   if (!token) return loginView();
   $('out').hidden = false;
+  window.SCAndroid?.setSession(token); // application Android : lance l'écoute des appels
   try { users = await api('GET', 'users'); } catch (e) { return toast(e.message); }
   const ios = /iphone|ipad/i.test(navigator.userAgent) && !navigator.standalone;
   const notifOk = 'Notification' in window && Notification.permission === 'granted';
