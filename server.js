@@ -55,11 +55,17 @@ const routes = {
     const t = db.users.find(u => u.pseudo === b.pseudo);
     if (!t) throw err(404, 'Utilisateur introuvable');
     const body = JSON.stringify({ title: 'Smart Chemical', body: `${me.pseudo} t'appelle : viens !` });
-    let sent = 0;
-    for (const s of [...t.subs]) {
-      try { await webpush.sendNotification(s, body, { TTL: 60, urgency: 'high' }); sent++; }
-      catch (e) { if (e.statusCode === 404 || e.statusCode === 410) t.subs = t.subs.filter(x => x !== s); }
-    }
+    const ring = async () => {
+      let n = 0;
+      for (const s of [...t.subs]) {
+        try { await webpush.sendNotification(s, body, { TTL: 60, urgency: 'high' }); n++; }
+        catch (e) { if (e.statusCode === 404 || e.statusCode === 410) t.subs = t.subs.filter(x => x !== s); }
+      }
+      return n;
+    };
+    const sent = await ring();
+    // sonne 6 fois en tout (toutes les 5 s) pour qu'on ne rate pas l'appel
+    if (sent) for (let i = 1; i < 6; i++) setTimeout(() => ring().catch(() => {}), i * 5000);
     save();
     if (!sent) throw err(409, `${t.pseudo} n'a pas activé les notifications sur son téléphone`);
     return { sent };

@@ -8,8 +8,9 @@ self.addEventListener('fetch', e => {
 });
 self.addEventListener('push', e => {
   const d = e.data ? e.data.json() : { title: 'Smart Chemical', body: 'Tu es appelé !' };
+  e.waitUntil(clients.matchAll({ type: 'window' }).then(l => l.forEach(c => c.postMessage('ring'))));
   e.waitUntil(self.registration.showNotification(d.title, {
-    body: d.body, icon: 'icon-180.png', vibrate: [400, 150, 400, 150, 400], requireInteraction: true, tag: 'appel', renotify: true,
+    body: d.body, icon: 'icon-180.png', vibrate: Array(10).fill([1000, 300]).flat(), requireInteraction: true, tag: 'appel', renotify: true,
   }));
 });
 self.addEventListener('notificationclick', e => {

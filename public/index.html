@@ -125,6 +125,14 @@ async function enablePush(quiet) {
   } catch (e) { quiet === true || toast('Activation impossible : ' + e.message); }
 }
 
+// application ouverte : bips + vibrations en boucle
+navigator.serviceWorker?.addEventListener('message', () => {
+  try {
+    navigator.vibrate?.(Array(10).fill([1000, 300]).flat());
+    const a = new AudioContext();
+    for (let i = 0; i < 8; i++) { const o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(a.currentTime + i * .6); o.stop(a.currentTime + i * .6 + .35); }
+  } catch (e) {}
+});
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 show();
 </script>
