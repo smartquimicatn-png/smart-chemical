@@ -66,6 +66,7 @@ function loginView() {
 async function show() {
   if (!token) return loginView();
   $('out').hidden = false;
+  listen();
   window.SCAndroid?.setSession(token); // application Android : lance l'écoute des appels
   try { users = await api('GET', 'users'); } catch (e) { return toast(e.message); }
   const ios = /iphone|ipad/i.test(navigator.userAgent) && !navigator.standalone;
@@ -139,23 +140,56 @@ const u8 = b => Uint8Array.from(atob(b.replace(/-/g, '+').replace(/_/g, '/')), c
 async function enablePush(quiet) {
   try {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return quiet === true || toast('Notifications non supportées ici (iPhone : ouvre depuis l\'écran d\'accueil)');
-    if (await Notification.requestPermission() !== 'granted') return quiet === true || toast('Notifications refusées');
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(vapid) });
+    if (await Notification.requestPermission() !== 'granted') return quiet === true || toast('Notifications bloquées : dans Chrome, touche ⋮ puis Paramètres du site, Notifications, Autoriser');
+    const lim = (p, m) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(m)), 15000))]);
+    const reg = await lim(navigator.serviceWorker.ready, 'Service non prêt, recharge la page');
+    const sub = await lim(reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(vapid) }), 'Ce téléphone ne joint pas les services de notification Google. Garde l\'application ouverte pour recevoir les appels');
     await api('POST', 'subscribe', sub.toJSON());
     if (quiet !== true) { toast('Appels activés ✔'); show(); }
-  } catch (e) { quiet === true || toast('Activation impossible : ' + e.message); }
+  } catch (e) { quiet === true || toast(e.message); }
 }
 
 // application ouverte : bips + vibrations en boucle
-navigator.serviceWorker?.addEventListener('message', ev => {
-  incoming = ev.data && ev.data.from; show();
+function ringNow() {
+  if (Date.now() - (ringNow.t || 0) < 4000) return; // push + flux direct : une seule sonnerie
+  ringNow.t = Date.now();
   try {
     navigator.vibrate?.(Array(10).fill([1000, 300]).flat());
     const a = window.ctx = new AudioContext();
-    for (let i = 0; i < 8; i++) { const o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(a.currentTime + i * .6); o.stop(a.currentTime + i * .6 + .35); }
+    for (let i = 0; i < 40; i++) { const o = a.createOscillator(); o.connect(a.destination); o.frequency.value = 880; o.start(a.currentTime + i * .6); o.stop(a.currentTime + i * .6 + .35); }
   } catch (e) {}
-});
+}
+navigator.serviceWorker?.addEventListener('message', ev => { incoming = ev.data && ev.data.from; show(); ringNow(); });
+
+// flux direct : l'appel arrive tant que l'application est ouverte, sans dépendre des notifications push
+let listening = false;
+async function listen() {
+  if (listening) return;
+  listening = true;
+  while (token) {
+    try {
+      const r = await fetch('/api/events', { headers: { authorization: 'Bearer ' + token } });
+      if (r.status === 401) break;
+      const rd = r.body.getReader(), dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await rd.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const m = buf.slice(0, i).match(/^data: (.*)$/m); buf = buf.slice(i + 2);
+          if (!m) continue;
+          const d = JSON.parse(m[1]);
+          if (d.cancel) { incoming = null; navigator.vibrate?.(0); window.ctx?.close(); show(); }
+          else { incoming = d.from; show(); ringNow(); }
+        }
+      }
+    } catch (e) {}
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  listening = false;
+}
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
 show();
 </script>
